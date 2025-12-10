@@ -1,0 +1,15 @@
+$TTL 86400
+@ IN SOA arq.{{ project_domain }}. root.arq.{{ project_domain }}. (
+    2025010101 ; Serial
+    604800     ; Refresh
+    86400      ; Retry
+    2419200    ; Expire
+    86400 )    ; Negative Cache TTL
+;
+@            IN  NS      arq.{{ project_domain }}.
+@            IN  A       {{ ip_arq }}
+arq          IN  A       {{ ip_arq }}
+db           IN  A       {{ ip_db }}
+app          IN  A       {{ ip_app }}
+cli          IN  A       192.168.56.50  ; Primeiro IP do range dinamico
+www          IN  CNAME   app

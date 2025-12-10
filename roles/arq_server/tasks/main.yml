@@ -1,0 +1,148 @@
+---
+# Tarefas de configuracao exclusivas do Servidor ARQ
+
+# === 1. LVM (Logical Volume Management) e NFS Server ===
+- name: 1. Instalar pacotes essenciais (lvm2, nfs-kernel-server)
+  ansible.builtin.apt:
+    name:
+      - lvm2
+      - nfs-kernel-server
+    state: present
+    update_cache: yes
+
+- name: 2. Criar as Physical Volumes (PV) nos discos adicionais (/dev/sdb, /dev/sdc, /dev/sdd)
+  # Nota: Usamos /dev/sdb, /dev/sdc, /dev/sdd diretamente, sem particionamento, 
+  # seguindo o uso comum do módulo pvcreate para discos inteiros sem tabela de partição.
+  community.general.pvcreate:
+    pvname: "/dev/{{ item }}"
+  loop:
+    - sdb
+    - sdc
+    - sdd
+
+- name: 3. Criar o Volume Group (VG) chamado ifpb
+  community.general.vgcreate:
+    vgname: ifpb
+    pvname:
+      - /dev/sdb
+      - /dev/sdc
+      - /dev/sdd
+
+- name: 4. Criar o Logical Volume (LV) chamado dados (25 GB)
+  community.general.lvcreate:
+    vgname: ifpb
+    lvname: dados
+    size: 25G # 25 Gigabytes 
+
+- name: 5. Formatar o Volume Logico (/dev/ifpb/dados) com ext4
+  community.general.filesystem:
+    fstype: ext4
+    dev: /dev/ifpb/dados
+    opts: -F # Força a formatação
+  # Exibição do esquema de LVM 
+
+- name: 6. Criar ponto de montagem /dados e o subdiretorio nfs
+  ansible.builtin.file:
+    path: /dados/nfs
+    state: directory
+    owner: root
+    group: ifpb
+    mode: '2775' # setgid para herdar o grupo
+
+- name: 7. Montar o Volume Logico /dados e garantir a persistencia (fstab)
+  ansible.posix.mount:
+    path: /dados
+    src: /dev/ifpb/dados
+    fstype: ext4
+    state: mounted
+    opts: defaults,noatime
+
+# === 2. NFS (Network File System) Exportação ===
+- name: 8. Configurar a exportacao do diretorio NFS (/dados/nfs)
+  ansible.builtin.lineinfile:
+    path: /etc/exports
+    line: '/dados/nfs {{ network_subnet }}(rw,sync,no_subtree_check)'
+    state: present
+  notify: Restart nfs-kernel-server
+
+- name: 9. Garantir que o servico NFS esteja rodando e habilitado
+  ansible.builtin.service:
+    name: nfs-kernel-server
+    state: started
+    enabled: yes
+
+# === 3. DHCP (Dynamic Host Configuration Protocol) ===
+- name: 10. Instalar o servidor DHCP (isc-dhcp-server)
+  ansible.builtin.apt:
+    name: isc-dhcp-server
+    state: present
+
+- name: 11. Configurar a interface de escuta do DHCP (eth1)
+  ansible.builtin.lineinfile:
+    path: /etc/default/isc-dhcp-server
+    regexp: '^INTERFACESv4='
+    line: 'INTERFACESv4="{{ network_interface }}"'
+    state: present
+
+- name: 12. Distribuir o arquivo dhcpd.conf com as reservas e faixa dinamica
+  ansible.builtin.template:
+    src: dhcpd.conf.j2
+    dest: /etc/dhcp/dhcpd.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart isc-dhcp-server
+
+# === 4. BIND (Servidor DNS) ===
+- name: 13. Instalar o servidor DNS (bind9)
+  ansible.builtin.apt:
+    name: bind9
+    state: present
+
+- name: 14. Configurar named.conf.options (permitir consultas na rede)
+  ansible.builtin.lineinfile:
+    path: /etc/bind/named.conf.options
+    regexp: '^(//)?\s+allow-query\s*\{\s*localnets;\s*};\s*$'
+    line: '        allow-query { {{ network_subnet }}; };'
+    insertafter: 'directory "/var/cache/bind";'
+    backup: yes 
+
+- name: 15. Configurar named.conf.local (declaracao de zonas)
+  ansible.builtin.template:
+    src: named.conf.local.j2
+    dest: /etc/bind/named.conf.local
+    owner: bind
+    group: bind
+    mode: '0644'
+  notify: Restart bind9
+
+- name: 16. Configurar arquivo de zona direta
+  ansible.builtin.template:
+    src: db.domain.j2
+    dest: "/etc/bind/db.{{ project_domain }}"
+    owner: bind
+    group: bind
+    mode: '0644'
+  notify: Restart bind9
+
+- name: 17. Configurar arquivo de zona reversa
+  ansible.builtin.template:
+    src: db.reverse.j2
+    dest: /etc/bind/db.192
+    owner: bind
+    group: bind
+    mode: '0644'
+  notify: Restart bind9
+
+- name: 18. Configurar Resolv.conf do ARQ para usar ele mesmo como DNS
+  ansible.builtin.copy:
+    content: |
+      nameserver {{ ip_arq }}
+      search {{ project_domain }}
+    dest: /etc/resolv.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: 19. Chamar Handlers
+  ansible.builtin.meta: flush_handlers

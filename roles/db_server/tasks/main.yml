@@ -1,0 +1,66 @@
+---
+# Tarefas de configuracao exclusivas do Servidor DB
+
+- name: 1. Instalar MariaDB Server e Autofs
+  ansible.builtin.apt:
+    name:
+      - mariadb-server
+      - python3-mysqldb # Modulo necessário para os módulos mysql_*
+      - autofs
+    state: present
+    update_cache: yes
+
+# === MariaDB / MySQL ===
+- name: 2. Garantir que o servico MariaDB esteja rodando
+  ansible.builtin.service:
+    name: mariadb
+    state: started
+    enabled: yes
+
+- name: 3. Criar usuario de replicacao (user_replication)
+  community.mysql.mysql_user:
+    name: user_replication
+    password: replicacao_pwd
+    priv: '*.*:REPLICATION SLAVE,RELOAD on *.*'
+    host: '%'
+    state: present
+
+- name: 4. Criar o banco de dados 'project_db'
+  community.mysql.mysql_db:
+    name: project_db
+    state: present
+
+- name: 5. Criar usuario 'db_user' para o banco de dados 'project_db'
+  community.mysql.mysql_user:
+    name: db_user
+    password: secret_password
+    priv: 'project_db.*:ALL'
+    host: '%'
+    state: present
+
+# === Autofs para Montagem NFS (/var/nfs) ===
+- name: 6. Criar o mapa principal do Autofs (auto.master)
+  ansible.builtin.lineinfile:
+    path: /etc/auto.master
+    line: '/var/nfs /etc/auto.nfs --timeout=60'
+    regexp: '^/var/nfs'
+    state: present
+    insertbefore: '^\+auto.master'
+
+- name: 7. Criar o mapa de compartilhamentos NFS (auto.nfs)
+  ansible.builtin.copy:
+    content: 'dados -fstype=nfs,rw,soft,intr {{ ip_arq }}:/dados/nfs'
+    dest: /etc/auto.nfs
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart autofs
+
+- name: 8. Criar o ponto de montagem base /var/nfs
+  ansible.builtin.file:
+    path: /var/nfs
+    state: directory
+    mode: '0755'
+
+- name: 9. Chamar Handlers
+  ansible.builtin.meta: flush_handlers

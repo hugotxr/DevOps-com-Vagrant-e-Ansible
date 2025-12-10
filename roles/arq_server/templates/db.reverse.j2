@@ -1,0 +1,15 @@
+$TTL 86400
+@ IN SOA arq.{{ project_domain }}. root.arq.{{ project_domain }}. (
+    2025010101 ; Serial
+    604800     ; Refresh
+    86400      ; Retry
+    2419200    ; Expire
+    86400 )    ; Negative Cache TTL
+;
+@    IN  NS    arq.{{ project_domain }}.
+;
+; PTR records (somente o último byte do IP)
+{{ ip_arq_suffix }}  IN  PTR   arq.{{ project_domain }}.
+{{ ip_db_suffix }}   IN  PTR   db.{{ project_domain }}.
+{{ ip_app_suffix }}  IN  PTR   app.{{ project_domain }}.
+50          IN  PTR   cli.{{ project_domain }}.

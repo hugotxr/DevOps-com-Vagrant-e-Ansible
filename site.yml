@@ -1,0 +1,32 @@
+---
+# site.yml - Playbook principal que aplica as roles
+
+- name: "FASE 1 - Configuracoes Comuns (ALL)"
+  hosts: all
+  become: yes
+  roles:
+    - common
+
+- name: "FASE 2 - Configuracoes do Servidor ARQ (LVM, DHCP, DNS, NFS)"
+  hosts: arq
+  become: yes
+  roles:
+    - arq_server
+
+- name: "FASE 3 - Configuracoes do Servidor DB (MariaDB, Autofs)"
+  hosts: db
+  become: yes
+  roles:
+    - db_server
+
+- name: "FASE 4 - Configuracoes do Servidor APP (Apache, Autofs)"
+  hosts: app
+  become: yes
+  roles:
+    - app_server
+
+- name: "FASE 5 - Configuracoes do Host CLI (X11, Autofs)"
+  hosts: cli
+  become: yes
+  roles:
+    - cli_host

@@ -1,0 +1,88 @@
+---
+# Tarefas comuns para todas as VMs (arq, db, app, cli)
+
+- name: 1. Atualizar cache de pacotes e fazer upgrade
+  ansible.builtin.apt:
+    update_cache: yes
+    upgrade: full
+    cache_valid_time: 3600
+
+- name: 2. Instalar chrony (NTP), cliente NFS e Python3
+  ansible.builtin.apt:
+    name:
+      - chrony
+      - nfs-common
+      - python3
+      - python3-apt
+    state: present
+
+# === Configuração NTP/Timezone ===
+- name: 3. Configurar chrony (NTP) para pool.ntp.br
+  ansible.builtin.copy:
+    content: |
+      server pool.ntp.br iburst
+      driftfile /var/lib/chrony/chrony.drift
+      logdir /var/log/chrony
+    dest: /etc/chrony/chrony.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart chrony
+
+- name: 4. Ajustar zona de tempo para America/Recife
+  community.general.timezone:
+    name: America/Recife
+
+# === Configuração Usuários/SUDO ===
+- name: 5. Criar grupo ifpb
+  ansible.builtin.group:
+    name: ifpb
+    state: present
+
+- name: 6. Criar usuários (nome1 e nome2) e adicioná-los ao grupo ifpb
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: ifpb
+    append: yes
+    state: present
+    shell: /bin/bash
+    generate_ssh_key: yes
+    ssh_key_bits: 2048
+    ssh_key_file: .ssh/id_rsa
+  loop:
+    - "{{ user_nome1 }}" 
+    - "{{ user_nome2 }}" 
+
+- name: 7. Configurar sudo para grupo ifpb (acesso de root sem senha)
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers.d/ifpb-root
+    line: '%ifpb ALL=(ALL) NOPASSWD: ALL'
+    create: yes
+    validate: 'visudo -cf %s'
+
+# === Hardening SSH ===
+- name: 8. Configurar SSH - Mensagem de Saudação (Banner)
+  ansible.builtin.copy:
+    content: |
+      Acesso apenas para pessoas com autorizacao expressa!!!
+    dest: /etc/ssh/ssh_banner
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: 9. Configurar SSH - Desabilitar root login/senha, usar chaves e restringir grupos
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|AllowGroups|Banner)\s'
+    line: "{{ item }}"
+    state: present
+  loop:
+    - 'PermitRootLogin no'
+    - 'PasswordAuthentication no'
+    - 'PubkeyAuthentication yes'
+    - 'AllowGroups vagrant ifpb'
+    - 'Banner /etc/ssh/ssh_banner'
+  notify: Restart sshd
+
+- name: 10. Chamar Handlers para garantir que os serviços reiniciem
+  ansible.builtin.meta: flush_handlers

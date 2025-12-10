@@ -1,0 +1,31 @@
+# Configuracao do servidor DHCP (dhcpd.conf)
+
+# Opcoes globais
+default-lease-time 600;
+max-lease-time 7200;
+option subnet-mask 255.255.255.0;
+
+# Configuracoes de rede
+subnet {{ network_subnet | ansible.utils.ipaddr('network') }} netmask 255.255.255.0 {
+    # Faixa de IPs dinamicos para o host CLI
+    range 192.168.56.50 192.168.56.100;
+    
+    # Gateway (o proprio ARQ)
+    option routers {{ ip_arq }};
+    
+    # Servidor DNS (o proprio ARQ)
+    option domain-name-servers {{ ip_arq }};
+    option domain-name "{{ project_domain }}";
+
+    # Reserva de IP estático para Servidor DB (192.168.56.104)
+    host db {
+        hardware ethernet 08:00:27:00:00:DB; 
+        fixed-address {{ ip_db }};
+    }
+
+    # Reserva de IP estático para Servidor APP (192.168.56.154)
+    host app {
+        hardware ethernet 08:00:27:00:00:AP; 
+        fixed-address {{ ip_app }};
+    }
+}
